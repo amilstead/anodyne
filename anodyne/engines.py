@@ -1,7 +1,5 @@
 import logging
 
-import psycopg2
-
 from anodyne import exceptions as _exceptions
 
 from sqlalchemy import exc as sqla_exc
@@ -23,8 +21,8 @@ configured = False
 
 
 class engine_types:
-    postgres = "postgres"
-    postgres_psycopg2 = "postgres+psycopg2"
+    postgres = "postgresql"
+    postgres_psycopg2 = "postgresql+psycopg2"
     mysql = "mysql"
     pymysql = "mysql+pymysql"
     sqlite = "sqlite"
@@ -38,28 +36,7 @@ _engine_types = [
 ]
 
 
-def _gevent_wait_callback(conn, timeout=None):
-    """A wait callback useful to allow gevent to work with Psycopg."""
-    import gevent
-    import gevent.socket
-    while 1:
-        state = conn.poll()
-        if state == psycopg2.extensions.POLL_OK:
-            break
-        elif state == psycopg2.extensions.POLL_READ:
-            gevent.socket.wait_read(conn.fileno(), timeout=timeout)
-        elif state == psycopg2.extensions.POLL_WRITE:
-            gevent.socket.wait_write(conn.fileno(), timeout=timeout)
-        else:
-            raise psycopg2.OperationalError(
-                "Bad result from poll: %r" % state
-            )
-
-
-def configure(server_backends,
-              default_engine=None,
-              engine_failure_callback=None,
-              is_gevent=False):
+def configure(server_backends, default_engine=None, failure_callback=None):
     global on_engine_failure, backends, configured, default_server_engine
     if configured:
         raise _exceptions.ConfigurationException(
@@ -70,13 +47,10 @@ def configure(server_backends,
         raise ValueError("server_backends cannot be None!")
 
     backends = server_backends
-    on_engine_failure = engine_failure_callback
+    on_engine_failure = failure_callback
 
     if default_engine is not None and default_engine in _engine_types:
         default_server_engine = default_server_engine
-
-    if is_gevent:
-        psycopg2.extensions.set_wait_callback(_gevent_wait_callback)
 
     configured = True
 
@@ -244,7 +218,6 @@ def get_engine(server_list_key, recycle=False):
 
     server_info = backends.get(server_list_key)
     database_engine = server_info.get("engine_type", database_engine)
-
     engines = server_engines.get(server_list_key)
 
     if engines is None:

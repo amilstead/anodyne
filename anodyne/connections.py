@@ -81,7 +81,12 @@ def connection(database):
         conn.close()
         raise
     except sqla_exc.DBAPIError:
-        logger.error("Failed to execute transaction.")
+        logger.exception("Failed to execute transaction.")
+        transaction.rollback()
+        conn.close()
+        raise
+    except Exception:
+        logger.exception("Unknown exception occurred during transaction.")
         transaction.rollback()
         conn.close()
         raise
