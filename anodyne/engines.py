@@ -1,22 +1,18 @@
 import logging
 
-from anodyne import exceptions as _exceptions
-
 from sqlalchemy import exc as sqla_exc
 from sqlalchemy import create_engine as sqla_create_engine
 from sqlalchemy import pool as sqla_pool
 from sqlalchemy import orm
 
+from anodyne import exceptions as _exceptions
+
 on_engine_failure = None
 
 logger = logging.getLogger(__name__)
-
 server_engines = {}
-
 backends = {}
-
 default_server_engine = None
-
 configured = False
 
 
@@ -70,9 +66,13 @@ def create_engine(engine_type, connection_details):
             "Cannot create engines before configuration."
         )
     if engine_type == engine_types.sqlite:
-        connection_string = "%s:///%s" % (
-            engine_type, connection_details.get("dbname")
-        )
+        url = connection_details.get("url")
+        if url is not None:
+            connection_string = "%s:///%s" % (
+                engine_type, connection_details.get("dbname")
+            )
+        else:
+            connection_string = url
     else:
         connection_string = "%s://%s:%s@%s:%s/%s" % (
             engine_type,
@@ -199,7 +199,7 @@ def shuffle_engines(server_list_key):
         )
 
 
-def get_engine(server_list_key, recycle=False):
+def get_engine(server_list_key, recycle=False, log_name=""):
     """
     Retrieves a sqlalchemy Engine object to use for database connections.
 
@@ -225,10 +225,24 @@ def get_engine(server_list_key, recycle=False):
         if server_list is None:
             server_list = []
 
-        engine_list = [
-            create_engine(database_engine, engine_def)
-            for engine_def in server_list
-        ]
+        engine_list = []
+        for index, engine_def in enumerate(server_list):
+            one_based = index + 1
+            num_prefix = "0%d" % one_based if index < 10 else one_based
+            if log_name.startswith("-"):
+                num_prefix = "%s-" % num_prefix
+
+            log_prefix = "%s%s-%s" % (
+                num_prefix,
+                log_name,
+                server_list_key
+            )
+            new_engine = create_engine(
+                database_engine,
+                engine_def,
+                log_name_prefix=log_prefix
+            )
+            engine_list.append(new_engine)
         server_engines[server_list_key] = engine_list
     else:
         if recycle:

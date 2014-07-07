@@ -103,15 +103,13 @@ def DataClass(sqlalchemy_class, excludes=None, extras=None, name=None,
         columns=lambda self: list(self._column_keys),
         excluded_columns=lambda self: list(self._excluded)
     )
-
+    type_classes = (data_class_type,)
     if mixin:
-        class MixinClass(data_class_type, mixin):
-            pass
-        data_class_type = MixinClass
+        type_classes += (mixin,)
 
     data_class = type(
         name, # The classtype name will be "tincture.transfer.<name>"
-        (data_class_type,), # Inherit from the generated transfer type.
+        type_classes, # Inherit from the generated transfer type.
         # This is what eventually updates __dict__ in the class/instance.
         data_class_dict
     )

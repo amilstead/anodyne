@@ -15,7 +15,7 @@ with open("dependencies.pip") as dependencies:
 # TODO: Figure out how to ship regular files (not templated) with this setup
 # TODO: That way, sdist doesn't try to byte-compile the python file templates.
 setup(
-    name="awengine",
+    name="anodyne",
     description="Autonomous World Engine",
     packages=["anodyne"],
     version=".".join(filter(None, map(str, VERSION))),
@@ -72,7 +72,7 @@ def clean():
 def docs():
     # have to touch the automodules to build them every time since changes to
     # the module"s docstrings won"t affect the timestamp of the .rst file
-#    sh("find docs/source/awengine -name *.rst | xargs touch {}")
+#    sh("find docs/source/anodyne -name *.rst | xargs touch {}")
     sh("find docs/source -name *.rst -exec touch \"{}\" \\;")
     sh("cd docs; make html")
 
