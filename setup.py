@@ -14,6 +14,8 @@ setup(
     version=".".join(filter(None, map(str, VERSION))),
     author="Alex Milstead",
     author_email="alex@amilstead.com",
+    maintainer="Alex Milstead",
+    maintainer_email="alex@amilstead.com",
     install_requires=requirements,
     package_dir={"anodyne": "anodyne"},
     classifiers=[
@@ -22,6 +24,6 @@ setup(
         "Natural Language :: English",
         "Programming Language :: Python",
         "Topic :: Database ",
-        "License :: OSI Approved :: GNU Public License (GPL)"
+        "License :: OSI Approved :: GNU General Public License (GPL)"
     ],
 )
