@@ -17,9 +17,11 @@ setup(
     install_requires=requirements,
     package_dir={"anodyne": "anodyne"},
     classifiers=[
-        "Development Status :: 1 - Alpha",
+        "Development Status :: 3 - Alpha",
         "Intended Audience :: Developers",
         "Natural Language :: English",
         "Programming Language :: Python",
+        "Topic :: Database ",
+        "License :: OSI Approved :: GNU Public License (GPL)"
     ],
 )
