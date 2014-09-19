@@ -1,7 +1,7 @@
 from setuptools import setup
 
 
-VERSION = (0, 0, 1, "")
+VERSION = (0, 0, 2, "")
 
 requirements = [
     "SQLAlchemy==0.9.7"
@@ -16,6 +16,8 @@ setup(
     author_email="alex@amilstead.com",
     maintainer="Alex Milstead",
     maintainer_email="alex@amilstead.com",
+    url="https://github.com/amilstead/anodyne",
+    keywords=["sqlalchemy"],
     install_requires=requirements,
     package_dir={"anodyne": "anodyne"},
     classifiers=[
