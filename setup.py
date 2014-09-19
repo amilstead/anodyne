@@ -7,11 +7,9 @@ requirements = [
     "SQLAlchemy==0.9.7"
 ]
 
-# TODO: Figure out how to ship regular files (not templated) with this setup
-# TODO: That way, sdist doesn't try to byte-compile the python file templates.
 setup(
     name="anodyne",
-    description="Autonomous World Engine",
+    description="SQLAlchemy Database Utilities",
     packages=["anodyne"],
     version=".".join(filter(None, map(str, VERSION))),
     author="Alex Milstead",
