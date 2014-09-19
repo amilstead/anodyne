@@ -111,7 +111,7 @@ def _data_class(sqlalchemy_class, excludes=None, extras=None, name=None,
         type_classes += (mixin,)
 
     data_class = type(
-        name,  # The classtype name will be "tincture.transfer.<name>"
+        name,  # The classtype name will be "anodyne.data.<name>"
         type_classes,  # Inherit from the generated transfer type.
         # This is what eventually updates __dict__ in the class/instance.
         data_class_dict
