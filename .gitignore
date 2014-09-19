@@ -11,3 +11,4 @@ docs/build/*
 dist/*
 html/*
 test/logs
+*.idea

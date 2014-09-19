@@ -51,7 +51,7 @@ def configure(server_backends, default_engine=None, failure_callback=None):
     configured = True
 
 
-def create_engine(engine_type, connection_details):
+def create_engine(engine_type, connection_details, log_name_prefix=None):
     """
     Creates an engine based on the provided engine type and connection details.
 
@@ -82,11 +82,13 @@ def create_engine(engine_type, connection_details):
             connection_details.get("port"),
             connection_details.get("dbname")
         )
+    kwargs = {
+        "poolclass": sqla_pool.QueuePool,
+    }
+    if log_name_prefix is not None:
+        kwargs["logging_name"] = "%s.%s" % (__name__, log_name_prefix)
 
-    engine = sqla_create_engine(
-        connection_string,
-        poolclass=sqla_pool.QueuePool
-    )
+    engine = sqla_create_engine(connection_string, **kwargs)
     engine_data = {
         "failed": False,
         "engine_type": engine_type,
@@ -143,7 +145,7 @@ def mark_failed(server_list_key, engine):
     :param server_list_key: a db name mapping to connection engine meta data.
     :param engine: engine metadata that should have a reference to.
     """
-    global server_engines, failure_callback, configured
+    global server_engines, on_engine_failure, configured
     if not configured:
         raise _exceptions.ConfigurationException(
             "Cannot mark failures before configuration."

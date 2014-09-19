@@ -17,22 +17,24 @@ def _new_transfer_obj(cls, obj_instance, **kwargs):
     # The parent class invocation takes an expanded tuple of values that should
     # map 1-to-1 in position with the provided attributes.
     vals = ()
+    defaults = getattr(cls, "_defaults", {})
     # Need to invoke the superclass tuple with values in order of the parent's
     # namedtuple specification.
-    for key in cls._column_keys:
+    for key in getattr(cls, "_column_keys", []):
         # Default to None if we can't find the key anywhere.
         val = None
         if key in obj_instance.keys():
             # Try for the sqlalchemy class attribute first.
             val = obj_instance[key]
-        elif key in cls._extras_keys:
+        elif key in getattr(cls, "_extras_keys", []):
             # Try for the "extras" next.
             if key in kwargs.keys():
                 # If they gave it to us, use that value.
                 val = kwargs.get(key)
             else:
                 # Else, try a default.
-                default_val = cls._defaults.get(key)
+
+                default_val = defaults.get(key)
                 if default_val is not None:
                     val = default_val
         vals += (val,)
@@ -43,8 +45,8 @@ def _new_transfer_obj(cls, obj_instance, **kwargs):
     return super(_invocation_type, cls).__new__(_invocation_type, *vals)
 
 
-def DataClass(sqlalchemy_class, excludes=None, extras=None, name=None,
-              mixin=None):
+def _data_class(sqlalchemy_class, excludes=None, extras=None, name=None,
+                mixin=None):
     """
     Generates a runtime class which others will instantiate on a sqlalchemy
     row proxy.
@@ -57,7 +59,7 @@ def DataClass(sqlalchemy_class, excludes=None, extras=None, name=None,
     """
     global _transfer_types
     if name is None:
-        name = "TransferType_%s" % sqlalchemy_class.name
+        name = "DataClass_%s" % sqlalchemy_class.name
 
     # Check if we've already created this class before.
     data_class = _transfer_types.get(name)
@@ -86,8 +88,9 @@ def DataClass(sqlalchemy_class, excludes=None, extras=None, name=None,
     tuple_attributes = " ".join(column_keys)
     # The following lines create a generated runtime class.
 
-    # The name of the parent class type will be "tincture.transfer.<name>_tuple"
-    data_class_type = collections.namedtuple("%s_tuple" % name, tuple_attributes)
+    # The name of the parent class type will be "anodyne.data.<name>_tuple"
+    type_name = "%s_tuple" % name
+    data_class_type = collections.namedtuple(type_name, tuple_attributes)
 
     data_class_dict = dict(
         # How to generate a new instance.
@@ -108,11 +111,14 @@ def DataClass(sqlalchemy_class, excludes=None, extras=None, name=None,
         type_classes += (mixin,)
 
     data_class = type(
-        name, # The classtype name will be "tincture.transfer.<name>"
-        type_classes, # Inherit from the generated transfer type.
+        name,  # The classtype name will be "tincture.transfer.<name>"
+        type_classes,  # Inherit from the generated transfer type.
         # This is what eventually updates __dict__ in the class/instance.
         data_class_dict
     )
     # Cache the class by its name, so we don't need to generate it again later.
     _transfer_types[name] = data_class
     return data_class
+
+
+DataClass = _data_class
