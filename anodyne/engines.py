@@ -67,10 +67,14 @@ def create_engine(engine_type, connection_details, log_name_prefix=None):
         )
     if engine_type == engine_types.sqlite:
         url = connection_details.get("url")
-        if url is not None:
-            connection_string = "%s:///%s" % (
-                engine_type, connection_details.get("dbname")
-            )
+        if url is None:
+            dbname = connection_details.get("dbname")
+            if dbname is not None:
+                connection_string = "%s:///%s" % (
+                    engine_type, connection_details.get("dbname")
+                )
+            else:
+                raise _exceptions.CongifurationException("SQLite databases must have a url or dbname configured.")
         else:
             connection_string = url
     else:
