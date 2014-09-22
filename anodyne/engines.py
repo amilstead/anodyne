@@ -65,7 +65,12 @@ def create_engine(engine_type, connection_details, log_name_prefix=None):
         raise _exceptions.ConfigurationException(
             "Cannot create engines before configuration."
         )
+
+    kwargs = {
+        "poolclass": sqla_pool.QueuePool,
+    }
     if engine_type == engine_types.sqlite:
+        kwargs["connect_args"] = {"check_same_thread": False}
         url = connection_details.get("url")
         if url is None:
             dbname = connection_details.get("dbname")
@@ -86,9 +91,6 @@ def create_engine(engine_type, connection_details, log_name_prefix=None):
             connection_details.get("port"),
             connection_details.get("dbname")
         )
-    kwargs = {
-        "poolclass": sqla_pool.QueuePool,
-    }
     if log_name_prefix is not None:
         kwargs["logging_name"] = "%s.%s" % (__name__, log_name_prefix)
 
