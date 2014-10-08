@@ -68,29 +68,33 @@ def create_engine(engine_type, connection_details, log_name_prefix=None):
 
     kwargs = {
         "poolclass": sqla_pool.QueuePool,
+        "connect_args": connection_details.get("connect_args", {})
     }
+
     if engine_type == engine_types.sqlite:
-        kwargs["connect_args"] = {"check_same_thread": False}
-        url = connection_details.get("url")
-        if url is None:
+        kwargs["connect_args"].update({"check_same_thread": False})
+        connection_string = connection_details.get("url")
+        if connection_string is None:
             dbname = connection_details.get("dbname")
             if dbname is not None:
                 connection_string = "%s:///%s" % (
                     engine_type, connection_details.get("dbname")
                 )
             else:
-                raise _exceptions.CongifurationException("SQLite databases must have a url or dbname configured.")
-        else:
-            connection_string = url
+                raise _exceptions.ConfigurationException("SQLite databases must have a url or dbname configured.")
     else:
-        connection_string = "%s://%s:%s@%s:%s/%s" % (
-            engine_type,
-            connection_details.get("username"),
-            connection_details.get("password"),
-            connection_details.get("host"),
-            connection_details.get("port"),
-            connection_details.get("dbname")
-        )
+        connection_string = connection_details.get("url")
+        if connection_string is None:
+            connection_string = "%s://%s:%s@%s:%s" % (
+                engine_type,
+                connection_details.get("username"),
+                connection_details.get("password"),
+                connection_details.get("host"),
+                connection_details.get("port")
+            )
+            dbname = connection_details.get("dbname")
+            if dbname is not None:
+                connection_string = "%s/%s" % (connection_string, dbname)
     if log_name_prefix is not None:
         kwargs["logging_name"] = "%s.%s" % (__name__, log_name_prefix)
 

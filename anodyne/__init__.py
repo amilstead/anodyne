@@ -6,6 +6,8 @@ from sqlalchemy import pool as sqla_pool
 
 logger = logging.getLogger(__name__)
 
+enable_disconnect_rebound = True
+
 
 @sqla_event.listens_for(sqla_pool.Pool, "checkout")
 def disconnect_rebound(dbapi_connection, connection_record, connection_proxy):
@@ -23,18 +25,19 @@ def disconnect_rebound(dbapi_connection, connection_record, connection_proxy):
     :param connection_proxy:
     :return:
     """
-    cursor = dbapi_connection.cursor()
-    try:
-        cursor.execute("SELECT 1")
-    except:
-        # optional - dispose the whole pool
-        # instead of invalidating one at a time
-        # connection_proxy._pool.dispose()
+    if enable_disconnect_rebound:
+        cursor = dbapi_connection.cursor()
+        try:
+            cursor.execute("SELECT 1")
+        except:
+            # optional - dispose the whole pool
+            # instead of invalidating one at a time
+            # connection_proxy._pool.dispose()
 
-        # raise DisconnectionError - pool will try
-        # connecting again up to three times before raising.
-        logger.exception(
-            "Failed to establish connection for %r" % repr(dbapi_connection)
-        )
-        raise sqla_exc.DisconnectionError()
-    cursor.close()
+            # raise DisconnectionError - pool will try
+            # connecting again up to three times before raising.
+            logger.exception(
+                "Failed to establish connection for %r" % repr(dbapi_connection)
+            )
+            raise sqla_exc.DisconnectionError()
+        cursor.close()
