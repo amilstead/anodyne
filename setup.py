@@ -1,10 +1,10 @@
 from setuptools import setup
 
 
-VERSION = (0, 0, 7, "")
+VERSION = (0, 0, 8, "")
 
 requirements = [
-    "SQLAlchemy==0.9.7"
+    "SQLAlchemy>=1.0.6"
 ]
 
 setup(
