@@ -9,15 +9,14 @@ from sqlalchemy import exc as sqla_exc
 logger = logging.getLogger(__name__)
 
 
-def _get_engine(database, recycle=False):
+def _get_engine(database):
     """
     Convenience function for retrieving a database engine from tincture.engines.
 
     :param database: The database to retrieve an engine for.
-    :param recycle: Whether or not to direct the engines to be recycled.
     :return: a database engine object.
     """
-    engine_data = engines.get_engine(database, recycle=recycle)
+    engine_data = engines.get_engine(database)
     if engine_data is None:
         err = "No engines available for '%s'" % database
         raise exceptions.NoValidEnginesException(err)
@@ -42,13 +41,13 @@ def get_connection(database):
         logger.exception(
             "Engine failed with error: %r. Switching over." % repr(ex)
         )
-        engines.mark_failed(database, engine_data)
-        engine_data = _get_engine(database, recycle=True)
+        engines.mark_failed(database)
+        engine_data = _get_engine(database)
         engine = engine_data.get("engine")
         try:
             conn = engine.connect()
         except sqla_exc.OperationalError:
-            engines.mark_failed(database, engine_data)
+            engines.mark_failed(database)
             logger.exception("Failed to connect to the database")
             raise
     return conn
@@ -93,69 +92,3 @@ def connection(database):
     else:
         transaction.commit()
         conn.close()
-
-
-def get_orm_session(database):
-    """
-    Retrieves a sqlalchemy orm session for the database reference provided.
-
-    :param database: a name of database engine managed by tincture.
-    :return: a session.
-    """
-    engine_data = _get_engine(database)
-    engine = engine_data.get("engine")
-    try:
-        engine.connect()
-        session = engine_data.get("session_class")()
-    except sqla_exc.OperationalError, ex:
-        logger.exception(
-            "Engine failed with error: %r. Switching over." % repr(ex)
-        )
-        engines.mark_failed(database, engine_data)
-        engine_data = _get_engine(database, recycle=True)
-        engine = engine_data.get("engine")
-        try:
-            engine.connect()
-            session = engine_data.get("session_class")()
-        except sqla_exc.OperationalError:
-            engines.mark_failed(database, engine_data)
-            logger.exception("Failed to connect to the database")
-            raise
-    return session
-
-
-@contextlib.contextmanager
-def orm_session(database):
-    """
-    Context manager for a database connection.
-
-    Used by the:
-    with orm_session("Foo") as session:
-        session.add(object)
-        ...
-    paradigm.
-
-    Begins a sqlalchemy orm session for the requester. Cleans up appropriately
-    on error or successful transaction.
-
-    :param database: a name of database engine managed by tincture.
-    :yields: a database connection to the requester.
-    """
-    session = get_orm_session(database)
-    connection = session.connection()
-    transaction = connection.begin()
-    try:
-        yield session
-    except sqla_exc.OperationalError:
-        logger.exception("Failed to execute sql statement.")
-        transaction.rollback()
-        raise
-    except sqla_exc.DBAPIError:
-        logger.error("Failed to execute transaction.")
-        transaction.rollback()
-        raise
-    else:
-        session.commit()
-    finally:
-        session.close()
-        connection.close()

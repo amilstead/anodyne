@@ -1,4 +1,6 @@
 import logging
+import os
+import urlparse
 
 from sqlalchemy import exc as sqla_exc
 from sqlalchemy import create_engine as sqla_create_engine
@@ -7,106 +9,93 @@ from sqlalchemy import orm
 
 from anodyne import exceptions as _exceptions
 
-on_engine_failure = None
 
 logger = logging.getLogger(__name__)
-server_engines = {}
-backends = {}
-default_server_engine = None
-configured = False
+engines = {}
+failure_callbacks = {}
 
 
-class engine_types:
-    postgres = "postgresql"
-    postgres_psycopg2 = "postgresql+psycopg2"
-    mysql = "mysql"
-    pymysql = "mysql+pymysql"
-    sqlite = "sqlite"
-
-_engine_types = [
-    engine_types.postgres,
-    engine_types.postgres_psycopg2,
-    engine_types.mysql,
-    engine_types.pymysql,
-    engine_types.sqlite
-]
-
-
-def configure(server_backends, default_engine=None, failure_callback=None):
-    global on_engine_failure, backends, configured, default_server_engine
-    if configured:
-        raise _exceptions.ConfigurationException(
-            "The connection layer has already been configured."
-        )
-
-    if backends is None:
-        raise ValueError("server_backends cannot be None!")
-
-    backends = server_backends
-    on_engine_failure = failure_callback
-
-    if default_engine is not None and default_engine in _engine_types:
-        default_server_engine = default_server_engine
-
-    configured = True
-
-
-def create_engine(engine_type, connection_details, log_name_prefix=None):
+def setup_engine(backend_name, verbose=False):
     """
-    Creates an engine based on the provided engine type and connection details.
+    Read configuration values from the environment and attempt to piece them
+    together in order to initiate a connection pool to our database.
 
-    :param engine_type: a tincture.engines.engine_types string.
-    :param connection_details: a dictionary containing connection details.
-            Must include keys: user, passwd, host, port and db.
-    :return: a dictionary of engine meta data, including the engine reference.
+    A full database URL can be provided as:
+      - ANODYNE_<backend-name>_URL=<database-url>
+
+    If a full URL is not provided, each component must be provided individually:
+      - ANODYNE_<backend-name>_DRIVER=<driver type (e.g. sqlite, psycopg2, etc).>
+      - ANODYNE_<backend-name>_NAME=<database-name>
+      - ANODYNE_<backend-name>_HOST=<database-host>
+      - ANODYNE_<backend-name>_PORT=<database-port>
+      - ANODYNE_<backend-name>_USER=<database-username>
+      - ANODYNE_<backend-name>_PASS=<database-password>
+
+    When the environment is incorrectly configured, this will raise a
+    ConfigurationException error.
+
+    :param backend_name: the name of a backend we should discover in the env.
     """
-    global configured
-    if not configured:
-        raise _exceptions.ConfigurationException(
-            "Cannot create engines before configuration."
-        )
+    engine_data = engines.get(backend_name)
+    if engine_data is not None:
+        return
 
+    prefix = "_".join(["anodyne", backend_name]).upper()
+    url_key = "_".join([prefix, "url"]).upper()
+    db_url = os.environ.get(url_key)
+    if not db_url:
+        env_vars = ["driver", "name", "host", "port", "user", "pass"]
+        try:
+            values = dict(
+                (key, os.environ["_".join([prefix, key]).upper()])
+                for key in env_vars
+            )
+        except KeyError:
+            err = "Invalid database configuration. Please check your environment."
+            raise _exceptions.ConfigurationException(err)
+        auth = "%s:%s" % (values["user"], values["pass"])
+        host = "%s:%s" % (values["host"], values["port"])
+        url_parts = (
+            values["driver"],
+            "@".join([auth, host]),
+            values["name"],
+            None,
+            None
+        )
+        db_url = urlparse.urlunsplit(url_parts)
+    split = urlparse.urlsplit(db_url)
     kwargs = {
         "poolclass": sqla_pool.QueuePool,
-        "connect_args": connection_details.get("connect_args", {})
+        "logging_name": ".".join([__name__, backend_name]),
+        "echo": verbose
     }
-
-    if engine_type == engine_types.sqlite:
-        kwargs["connect_args"].update({"check_same_thread": False})
-        connection_string = connection_details.get("url")
-        if connection_string is None:
-            dbname = connection_details.get("dbname")
-            if dbname is not None:
-                connection_string = "%s:///%s" % (
-                    engine_type, connection_details.get("dbname")
-                )
-            else:
-                raise _exceptions.ConfigurationException("SQLite databases must have a url or dbname configured.")
-    else:
-        connection_string = connection_details.get("url")
-        if connection_string is None:
-            connection_string = "%s://%s:%s@%s:%s" % (
-                engine_type,
-                connection_details.get("username"),
-                connection_details.get("password"),
-                connection_details.get("host"),
-                connection_details.get("port")
-            )
-            dbname = connection_details.get("dbname")
-            if dbname is not None:
-                connection_string = "%s/%s" % (connection_string, dbname)
-    if log_name_prefix is not None:
-        kwargs["logging_name"] = "%s.%s" % (__name__, log_name_prefix)
-
-    engine = sqla_create_engine(connection_string, **kwargs)
+    scheme = split.scheme
+    if scheme.startswith("sqlite"):
+        connect_args = kwargs.get("connect_args", {})
+        connect_args.update({"check_same_thread": False})
+        kwargs["connect_args"] = connect_args
+    engine = sqla_create_engine(db_url, **kwargs)
     engine_data = {
-        "failed": False,
-        "engine_type": engine_type,
-        "connection_details": connection_details,
         "engine": engine,
-        "session_class": orm.sessionmaker(bind=engine)
+        "name": backend_name,
+        "session_class": orm.sessionmaker(bind=engine),
+        "failed": False
     }
-    return engine_data
+    engines[backend_name] = engine_data
+
+
+def scan():
+    """
+    Scan the ANODYNE_BACKENDS envvar and look for a list of defined data
+    backends.
+    """
+    backends = os.environ.get("ANODYNE_BACKENDS", "")
+    for backend in backends.split(","):
+        setup_engine(backend)
+
+
+def register_failure_callback(backend_name, failure_callback):
+    failure_callbacks[backend_name] = failure_callback
 
 
 def poke_engine(engine_meta_data, attempt):
@@ -124,12 +113,18 @@ def poke_engine(engine_meta_data, attempt):
     :param engine_meta_data: the engine_meta_data to check.
     :param attempt: how many times we've already poked this engine.
     """
-    global on_engine_failure, configured
-    if not configured:
-        raise _exceptions.ConfigurationException(
-            "Cannot poke engine before configuration."
-        )
+    if len(engines.keys()) == 0:
+        err = "Tried to poke engine: %s but no engines are " \
+              "defined." % backend_name
+        raise _exceptions.ConfigurationException(err)
 
+    if not backend_name in engine.keys():
+        err = "Tried to poke engine: %s but could not find engine " \
+              "data." % backend_name
+        logger.error(err)
+        return
+
+    engine_meta_data = engines[backend_name]
     engine = engine_meta_data.get("engine")
     logger.info("Poking engine: %r. This is attempt: %d" % (
         repr(engine), (attempt + 1)
@@ -137,161 +132,87 @@ def poke_engine(engine_meta_data, attempt):
     try:
         conn = engine.connect()
         conn.close()
-        engine_meta_data["failed"] = False
+        engines[backend_name]["failed"] = False
         logger.info("Engine revived.")
     except sqla_exc.OperationalError:
         logger.warning(
             "Poked %r, but it still appears to be down." % repr(engine)
         )
+        failure_callback = failure_callbacks.get(engine_meta_data["name"])
         if on_engine_failure is not None:
             on_engine_failure(engine_meta_data, attempt + 1)
 
 
-def mark_failed(server_list_key, engine):
+def mark_failed(backend_name):
     """
     Marks a given engine as failed, If the failure callback is defined, it will
     be executed with the engine object.
 
-    :param server_list_key: a db name mapping to connection engine meta data.
+    :param backend_name: a db name mapping to connection engine meta data.
     :param engine: engine metadata that should have a reference to.
     """
-    global server_engines, on_engine_failure, configured
-    if not configured:
-        raise _exceptions.ConfigurationException(
-            "Cannot mark failures before configuration."
-        )
+    if len(engines.keys()) == 0:
+        err = "Tried to mark: %s failed but no engines are " \
+              "defined." % backend_name
+        raise _exceptions.ConfigurationException(err)
 
-    if engine is None:
-        logger.error("Cannot mark %s engine meta as failed" % type(None))
+    if not backend_name in engines.keys():
+        err = "Tried to mark: %s failed but could not find engine " \
+              "data." % backend_name
+        logger.error(err)
         return
 
-    if server_list_key is None:
-        logger.error("Need a server in order to mark a failed engine.")
 
-    engines = server_engines.get(server_list_key)
+    engine_data = engines.get(backend_name)
 
-    if engines is None:
-        logger.error("No engines configured for: %s." % server_list_key)
+    if engine_data is None:
+        logger.error("No engines configured for: %s." % backend_name)
         return
 
-    if engine not in engines:
-        logger.error("Engine: %r does not belong to %r" % (
-            engine.get("engine"), server_list_key
-        ))
-
-    engine["failed"] = True
+    engines[backend_name]["failed"] = True
+    on_engine_failure = failure_callbacks.get(backend_name)
     if on_engine_failure is not None:
         on_engine_failure(engine, 0)
 
 
-def shuffle_engines(server_list_key):
-    """
-    Shuffles the engines in an engine list mapped by server_list_key.
-
-    :param server_list_key: a db name mapping to connection engine meta data.
-    """
-    global server_engines, configured
-    if not configured:
-        raise _exceptions.ConfigurationException(
-            "Cannot shuffle engines before configuration."
-        )
-
-    engine_list = server_engines.get(server_list_key, [])
-    if len(engine_list) > 1:
-        being_recycled = engine_list.pop(0)
-        logger.info("Shuffling database engine: %s to %s" % (
-            being_recycled,
-            engine_list[0]
-        ))
-        engine_list.append(being_recycled)
-        server_engines[server_list_key] = engine_list
-    else:
-        logger.warning(
-            "Cannot shuffle engines with less than 2 servers defined."
-        )
-
-
-def get_engine(server_list_key, recycle=False, log_name=""):
+def get_engine(backend_name):
     """
     Retrieves a sqlalchemy Engine object to use for database connections.
 
-    :param server_list_key: a db name mapping to connection engine meta data.
-    :param recycle: Whether we should recycle the engines for server_list_key.
+    :param backend_name: a db name mapping to connection engine meta data.
     :return: engine meta data used to create a connection.
     """
-    global server_engines, configured, backends, default_server_engine
-    if not configured:
-        raise _exceptions.ConfigurationException(
-            "Cannot get engines before configuration."
-        )
-    database_engine = None
-    if default_server_engine is not None:
-        database_engine = default_server_engine
+    if len(engines.keys()) == 0:
+        err = "Tried to get engine for: %s but no engines " \
+              "configured." % backend_name
+        raise _exceptions.ConfigurationException(err)
+    if not backend_name in engines.keys():
+        err = "Tried to get engine for: %s but could not find " \
+              "engine data." % backend_name
+        logger.error(err)
+        return
 
-    server_info = backends.get(server_list_key)
-    database_engine = server_info.get("engine_type", database_engine)
-    engines = server_engines.get(server_list_key)
-
-    if engines is None:
-        server_list = server_info.get("servers")
-        if server_list is None:
-            server_list = []
-
-        engine_list = []
-        for index, engine_def in enumerate(server_list):
-            one_based = index + 1
-            num_prefix = "0%d" % one_based if index < 10 else one_based
-            if log_name.startswith("-"):
-                num_prefix = "%s-" % num_prefix
-
-            log_prefix = "%s%s-%s" % (
-                num_prefix,
-                log_name,
-                server_list_key
-            )
-            new_engine = create_engine(
-                database_engine,
-                engine_def,
-                log_name_prefix=log_prefix
-            )
-            engine_list.append(new_engine)
-        server_engines[server_list_key] = engine_list
-    else:
-        if recycle:
-            shuffle_engines(server_list_key)
-
-    engines = server_engines[server_list_key]
-    for engine in engines:
-        if not engine.get("failed", False):
-            return engine
+    engine_data = engines.get(backend_name)
+    if not engine_data["failed"]:
+        return engine_data
     return None
 
 
-def clean_engines(server_list_key=None):
+def clean_engines(backend_name=None):
     """
-    Disposes of all listed engines mapped to by server_list_key.
-    If server_list_key is empty, we clear them all.
+    Disposes of all listed engines mapped to by backend_name.
+    If backend_name is empty, we clear them all.
 
-    :param server_list_key: a db name mapping to connection engine meta data.
+    :param backend_name: a db name mapping to connection engine meta data.
     """
-    global server_engines, configured
-    if not configured:
-        raise _exceptions.ConfigurationException(
-            "Cannot clean engines before configuration."
-        )
-    if server_list_key is None:
-        keys_to_clear = server_engines.keys()
-    else:
-        keys_to_clear = [server_list_key]
-    for key in keys_to_clear:
-        engine_list = server_engines.get(key)
-        if engine_list is not None:
-            for engine_data in engine_list:
-                engine_data["engine"].dispose()
-            del server_engines[key]
-        else:
-            # raise an exception?
-            logger.error(
-                "Tried to clear engines for keys: '%s', but key was not "
-                "found." % keys_to_clear
-            )
+    if backend_name is None:
+        for key in engines.keys():
+            del engines[key]
+            if key in failure_callbacks:
+                del failure_callbacks[key]
+        return
+
+    if backend_name in engines:
+        del engines[backend_name]
+    if backend_name in failure_callbacks:
+        del failure_callbacks[backend_name]

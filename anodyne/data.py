@@ -16,6 +16,8 @@ def _new_transfer_obj(cls, obj_instance, **kwargs):
     """
     # The parent class invocation takes an expanded tuple of values that should
     # map 1-to-1 in position with the provided attributes.
+    if not hasattr(obj_instance, "keys"):
+        raise ValueError("Transfer data must have a dict interface.")
     vals = ()
     defaults = getattr(cls, "_defaults", {})
     # Need to invoke the superclass tuple with values in order of the parent's
