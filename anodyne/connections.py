@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 def _get_engine(database):
     """
-    Convenience function for retrieving a database engine from tincture.engines.
+    Convenience function for retrieving a database engine from anodyne.engines.
 
     :param database: The database to retrieve an engine for.
     :return: a database engine object.
@@ -30,7 +30,7 @@ def get_connection(database):
     """
     Retrieves a database connection for the database reference provided.
 
-    :param database: a name of database engine managed by tincture.
+    :param database: a name of database engine managed by anodyne.
     :return: a connection.
     """
     engine_data = _get_engine(database)
@@ -67,7 +67,7 @@ def connection(database):
     Begins a database transaction for the requester. Cleans up appropriately
     on error or successful transaction.
 
-    :param database: a name of database engine managed by tincture.
+    :param database: a name of database engine managed by anodyne.
     :yields: a database connection to the requester.
     """
     conn = get_connection(database)
